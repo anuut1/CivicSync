@@ -1,0 +1,6 @@
+{
+  "name": "civiSync",
+  "description": "Hyperlocal civic issue reporting platform with Gemini-powered automatic categorization, severity scoring, and predictive risk alerts.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
