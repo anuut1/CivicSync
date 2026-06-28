@@ -5,7 +5,7 @@ export const API_URL = import.meta.env.VITE_API_URL ||
     ? 'http://localhost:8000'
     : 'https://civicsync-db1v.onrender.com');
 
-const api = axios.create({ baseURL: API_URL });
+const api = axios.create({ baseURL: `${API_URL}/api` });
 
 // attach JWT from localStorage on every request
 api.interceptors.request.use(config => {
