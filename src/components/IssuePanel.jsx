@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../utils/store';
 import { voteIssue, API_URL } from '../api/client';
-import { MapContainer, TileLayer, Marker } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import axios from 'axios';
 import html2canvas from 'html2canvas';
@@ -23,6 +23,15 @@ const getSeverityDetails = (severity) => {
   if (s === 3) return { label: 'Significant', color: '#f59e0b' };
   if (s === 4) return { label: 'Severe', color: '#f97316' };
   return { label: 'Critical', color: '#ef4444' };
+};
+
+const getMarkerColor = (issue) => {
+  if (!issue) return '#f97316';
+  if (Number(issue.severity) === 4) return '#ef4444';
+  const status = issue.status?.toLowerCase();
+  if (status === 'resolved') return '#22c55e';
+  if (status === 'verified' || status === 'assigned') return '#2563eb';
+  return '#f97316';
 };
 
 const timeAgo = (dateStr) => {
@@ -339,7 +348,7 @@ function IssuePanel() {
           navigator.share({
             files: [file],
             title: `civiSync Chennai Report #${selectedIssue.id}`,
-            text: `Help resolve this ${selectedIssue.category.replace('_', ' ')} hazard!`
+            text: `Help resolve this ${selectedIssue.category?.replace('_', ' ') || 'other'} hazard!`
           }).catch(err => {
             console.log("Web share skipped, using manual download", err);
             downloadCard(canvas);
@@ -588,7 +597,7 @@ function IssuePanel() {
           {/* Category Badge & Severity Pill */}
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '14px' }}>
             <span style={badgeStyle('#f1f5f9', '#334155')}>
-              {categoryEmojis[selectedIssue.category] || '⚠️'} {selectedIssue.category.replace('_', ' ')}
+               {categoryEmojis[selectedIssue.category] || '⚠️'} {selectedIssue.category?.replace('_', ' ') || 'other'}
             </span>
             <span style={badgeStyle(sev.color)}>{sev.label}</span>
             <span style={badgeStyle('#dbeafe', '#1e40af')}>📍 {selectedIssue.ward}</span>
@@ -793,7 +802,16 @@ function IssuePanel() {
                 style={{ height: '100%', width: '100%', pointerEvents: 'none' }}
               >
                 <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                <Marker position={[parseFloat(selectedIssue.latitude), parseFloat(selectedIssue.longitude)]} />
+                <CircleMarker
+                  center={[parseFloat(selectedIssue.latitude), parseFloat(selectedIssue.longitude)]}
+                  radius={10}
+                  pathOptions={{
+                    color: getMarkerColor(selectedIssue),
+                    fillColor: getMarkerColor(selectedIssue),
+                    fillOpacity: 0.8,
+                    weight: 2
+                  }}
+                />
               </MapContainer>
               
               {/* Google Maps / Street View trigger button */}

@@ -626,7 +626,7 @@ function AdminDashboard({ navigate }) {
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', gap: '6px', marginBottom: '4px', flexWrap: 'wrap' }}>
                         <span style={{ fontSize: '10px', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', backgroundColor: '#e2e8f0' }}>
-                          {categoryEmojis[issue.category]} {issue.category.replace('_', ' ')}
+                          {categoryEmojis[issue.category] || '⚠️'} {issue.category?.replace('_', ' ') || 'other'}
                         </span>
                         <span style={{ fontSize: '10px', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', backgroundColor: sevDetails.color + '15', color: sevDetails.color }}>
                           {sevDetails.label}
@@ -773,7 +773,7 @@ function AdminDashboard({ navigate }) {
                     {alertItem.summary}
                   </p>
                   <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '600' }}>
-                    Predicted Category: {categoryEmojis[alertItem.category]} {alertItem.category.replace('_', ' ')}
+                    Predicted Category: {categoryEmojis[alertItem.category] || '⚠️'} {alertItem.category?.replace('_', ' ') || 'other'}
                   </div>
                 </div>
               </div>

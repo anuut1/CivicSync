@@ -752,7 +752,7 @@ app.post("/api/alerts/run-predictions", requireAdmin, async (req: Request, res: 
     if (ai) {
       try {
         const response = await ai.models.generateContent({
-          model: "gemini-3.5-flash",
+          model: "gemini-1.5-flash",
           contents: `Analyze these recent civic issue logs for Ward "${wardName}":
           ${JSON.stringify(issues)}
           

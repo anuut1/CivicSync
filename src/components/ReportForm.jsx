@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../utils/store';
 import { reportIssue, analyzeIssue } from '../api/client';
-import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 
 const categoryEmojis = {
@@ -720,7 +720,16 @@ function ReportForm() {
                   <MapContainer center={[latitude, longitude]} zoom={14} zoomControl={false} style={{ height: '100%', width: '100%' }}>
                     <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                     <MapClickPicker setLatitude={setLatitude} setLongitude={setLongitude} setAddressString={setAddressString} />
-                    <Marker position={[latitude, longitude]} />
+                    <CircleMarker
+                      center={[latitude, longitude]}
+                      radius={12}
+                      pathOptions={{
+                        color: '#16a34a',
+                        fillColor: '#16a34a',
+                        fillOpacity: 0.85,
+                        weight: 2
+                      }}
+                    />
                   </MapContainer>
                 </div>
                 <div style={{ fontSize: '12px', color: '#64748b', textAlign: 'center' }}>
