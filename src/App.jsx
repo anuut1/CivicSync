@@ -3,6 +3,7 @@ import { useStore } from './utils/store';
 import MapPage from './pages/MapPage';
 import AdminDashboard from './pages/AdminDashboard';
 import axios from 'axios';
+import { API_URL } from './api/client';
 
 function App() {
   const { token, user, login, logout, setToast, updateIssue } = useStore();
@@ -94,7 +95,7 @@ function App() {
     }
 
     try {
-      const response = await axios.post('http://localhost:8000/api/auth/login', {
+      const response = await axios.post(`${API_URL}/api/auth/login`, {
         email: loginEmail,
         password: loginPassword,
       });
@@ -120,7 +121,7 @@ function App() {
     }
 
     try {
-      await axios.post('http://localhost:8000/api/auth/register', {
+      await axios.post(`${API_URL}/api/auth/register`, {
         name,
         email,
         password,

@@ -5,7 +5,8 @@ import {
   getMapIssues, 
   compilePredictions, 
   getActiveAlerts, 
-  getLeaderboard
+  getLeaderboard,
+  API_URL
 } from '../api/client';
 import axios from 'axios';
 import { MapContainer, TileLayer, Polygon, CircleMarker, useMap } from 'react-leaflet';
@@ -180,8 +181,8 @@ function AdminDashboard({ navigate }) {
         getActiveAlerts(),
         getLeaderboard(),
         getMapIssues({ include_resolved: true }),
-        axios.get('http://localhost:8000/api/public/departments'),
-        axios.get('http://localhost:8000/api/admin/briefings', { headers: { Authorization: `Bearer ${token}` } })
+        axios.get(`${API_URL}/api/public/departments`),
+        axios.get(`${API_URL}/api/admin/briefings`, { headers: { Authorization: `Bearer ${token}` } })
       ]);
       setMetrics(metricsRes.data);
       setAlerts(alertsRes.data);
@@ -229,7 +230,7 @@ function AdminDashboard({ navigate }) {
     try {
       const token = localStorage.getItem('civisync_token');
       const response = await axios.post(
-        `http://localhost:8000/api/issues/${assigningIssue.id}/assign`,
+        `${API_URL}/api/issues/${assigningIssue.id}/assign`,
         { assigned_to: assigneeDept, eta_days: Number(etaDays) },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -259,7 +260,7 @@ function AdminDashboard({ navigate }) {
       formData.append('resolved_image', proofImage);
 
       const response = await axios.post(
-        `http://localhost:8000/api/issues/${resolvingIssue.id}/resolve`,
+        `${API_URL}/api/issues/${resolvingIssue.id}/resolve`,
         formData,
         { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' } }
       );

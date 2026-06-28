@@ -1,6 +1,10 @@
 import axios from 'axios';
 
-const api = axios.create({ baseURL: 'http://localhost:8000' });
+export const API_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  ? 'http://localhost:8000'
+  : 'https://civicsync-db1v.onrender.com';
+
+const api = axios.create({ baseURL: API_URL });
 
 // attach JWT from localStorage on every request
 api.interceptors.request.use(config => {

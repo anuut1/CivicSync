@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../utils/store';
-import { voteIssue } from '../api/client';
+import { voteIssue, API_URL } from '../api/client';
 import { MapContainer, TileLayer, Marker } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import axios from 'axios';
@@ -95,7 +95,7 @@ function IssuePanel() {
     if (!selectedIssue?.id) return;
     setLoadingEvents(true);
     try {
-      const res = await axios.get(`http://localhost:8000/api/issues/${selectedIssue.id}/events`);
+      const res = await axios.get(`${API_URL}/api/issues/${selectedIssue.id}/events`);
       setEvents(res.data);
     } catch (err) {
       console.error("Timeline query error:", err);
@@ -108,7 +108,7 @@ function IssuePanel() {
     fetchTimelineEvents();
     
     // Fetch departments
-    axios.get('http://localhost:8000/api/public/departments')
+    axios.get(`${API_URL}/api/public/departments`)
       .then(res => setDepartments(res.data))
       .catch(err => console.error("Error loading departments list:", err));
 
@@ -220,7 +220,7 @@ function IssuePanel() {
     try {
       const token = localStorage.getItem('civisync_token');
       const response = await axios.post(
-        `http://localhost:8000/api/issues/${selectedIssue.id}/assign`,
+        `${API_URL}/api/issues/${selectedIssue.id}/assign`,
         { assigned_to: assigneeDept, eta_days: Number(etaDays) },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -245,7 +245,7 @@ function IssuePanel() {
       const formData = new FormData();
       formData.append('resolved_image', proofImage);
       const response = await axios.post(
-        `http://localhost:8000/api/issues/${selectedIssue.id}/resolve`,
+        `${API_URL}/api/issues/${selectedIssue.id}/resolve`,
         formData,
         { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' } }
       );
@@ -270,7 +270,7 @@ function IssuePanel() {
     try {
       const token = localStorage.getItem('civisync_token');
       await axios.post(
-        `http://localhost:8000/api/issues/${selectedIssue.id}/comment`,
+        `${API_URL}/api/issues/${selectedIssue.id}/comment`,
         { text: commentText },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -290,7 +290,7 @@ function IssuePanel() {
     try {
       const token = localStorage.getItem('civisync_token');
       await axios.post(
-        `http://localhost:8000/api/issues/${selectedIssue.id}/rate`,
+        `${API_URL}/api/issues/${selectedIssue.id}/rate`,
         { rating: stars },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -310,7 +310,7 @@ function IssuePanel() {
     try {
       const token = localStorage.getItem('civisync_token');
       await axios.post(
-        `http://localhost:8000/api/issues/${selectedIssue.id}/escalate`,
+        `${API_URL}/api/issues/${selectedIssue.id}/escalate`,
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
