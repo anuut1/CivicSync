@@ -1,8 +1,9 @@
 import axios from 'axios';
 
-export const API_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  ? 'http://localhost:8000'
-  : 'https://civicsync-db1v.onrender.com';
+export const API_URL = import.meta.env.VITE_API_URL || 
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? 'http://localhost:8000'
+    : 'https://civicsync-db1v.onrender.com');
 
 const api = axios.create({ baseURL: API_URL });
 
