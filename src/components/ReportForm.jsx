@@ -124,7 +124,7 @@ function ReportForm() {
     }
   }, [showReportForm, mapCenter]);
 
-  if (!showReportForm) return null;
+
 
   // Process selected file with Gemini Vision in the background
   const processImageAnalysis = async (file) => {
@@ -484,6 +484,8 @@ function ReportForm() {
 
   // Confetti CSS Particles
   const confettiArray = Array.from({ length: 60 });
+
+  if (!showReportForm) return null;
 
   return (
     <div style={overlayStyle} onClick={(e) => e.target === e.currentTarget && handleClose()}>

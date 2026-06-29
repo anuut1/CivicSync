@@ -316,6 +316,8 @@ app.use(proxyMiddleware);
 app.use(express.json());
 
 
+
+
 // Simple JWT Auth Mock middleware (Header format: "Bearer <email>")
 function requireUser(req: Request, res: Response, next: () => void) {
   const authHeader = req.headers.authorization;
@@ -461,7 +463,7 @@ app.post("/api/issues/report", requireUser, upload.single("image"), async (req: 
   if (ai) {
     try {
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-1.5-flash",
         contents: [
           {
             inlineData: {

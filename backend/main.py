@@ -751,7 +751,7 @@ async def analyze_photo(
             
             Citizen contextual input description: {description or "None"}
             """
-            model = genai.GenerativeModel("gemini-3.5-flash")
+            model = genai.GenerativeModel("gemini-1.5-flash")
             response = model.generate_content(
                 [pil_image, prompt],
                 generation_config={"response_mime_type": "application/json"}
@@ -1192,7 +1192,7 @@ async def resolve_issue(
               "recommendation": "string or null"
             }
             """
-            model_comp = genai.GenerativeModel("gemini-3.5-flash")
+            model_comp = genai.GenerativeModel("gemini-1.5-flash")
             response_comp = model_comp.generate_content(
                 [pil_orig, pil_resolved, prompt_comp],
                 generation_config={"response_mime_type": "application/json"}
@@ -1354,7 +1354,7 @@ def run_predictions(current_user: User = Depends(get_admin_user), db: Session = 
                 Values for alert_needed MUST be a boolean.
                 Summary MUST be 1-2 sentences, maximum 30 words forecasting future civic vulnerabilities.
                 """
-                model = genai.GenerativeModel("gemini-3.5-flash")
+                model = genai.GenerativeModel("gemini-1.5-flash")
                 response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
                 
                 prediction = json.loads(response.text.strip())
@@ -1535,7 +1535,7 @@ def compile_predictions(current_user: User = Depends(get_admin_user), db: Sessio
                   "summary": "Multiple pipe stress issues indicates high risk of water leak breakage."
                 }}
                 """
-                model = genai.GenerativeModel("gemini-3.5-flash")
+                model = genai.GenerativeModel("gemini-1.5-flash")
                 response = model.generate_content(
                     prompt, 
                     generation_config={"response_mime_type": "application/json"}
@@ -1628,7 +1628,7 @@ def chat_assistant(payload: ChatRequest, db: Session = Depends(get_db)):
 
     if GEMINI_API_KEY:
         try:
-            model = genai.GenerativeModel("gemini-3.5-flash")
+            model = genai.GenerativeModel("gemini-1.5-flash")
             response = model.generate_content(context)
             return {"response": response.text.strip()}
         except Exception as e:
@@ -1670,7 +1670,7 @@ async def run_auto_assign(issue_id: int, db: Session):
     if GEMINI_API_KEY:
         try:
             prompt = f"An issue has been filed with category '{issue.category}', description '{issue.description or issue.ai_summary}', and location '{issue.address_string}'. Available departments: {dept_list}. Which department should handle this? Reply JSON only: {{'department_id': int, 'department_name': string, 'confidence': 'high'/'medium'/'low', 'reason': string (one sentence)}}"
-            model = genai.GenerativeModel("gemini-3.5-flash")
+            model = genai.GenerativeModel("gemini-1.5-flash")
             response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
             res_json = json.loads(response.text.strip())
             confidence = res_json.get("confidence", "low").lower()
@@ -1771,7 +1771,7 @@ def get_issue_events(id: int, db: Session = Depends(get_db)):
         if GEMINI_API_KEY:
             try:
                 prompt = f"Summarize these citizen/admin comments on a civic issue report. Respond with a single concise sentence under 15 words beginning with 'AI summary:':\n{comment_texts}"
-                model = genai.GenerativeModel("gemini-3.5-flash")
+                model = genai.GenerativeModel("gemini-1.5-flash")
                 response = model.generate_content(prompt)
                 ai_summary_text = response.text.strip()
                 if not ai_summary_text.startswith("AI summary:"):
@@ -1826,7 +1826,7 @@ def extract_chat_intent(payload: ChatRequest):
     if GEMINI_API_KEY:
         try:
             prompt = f"Extract spatial filter intent from this civic app query. Return JSON only, no prose: {{has_spatial_intent: boolean, category: string or null (one of Pothole/Leak/Streetlight/Waste/Other/null), status: string or null (Pending/Verified/Assigned/Resolved/null), severity: string or null (Low/Medium/High/Critical/null), area_name: string or null, proximity: string or null (near schools/near hospitals/etc), days_filter: integer or null}}. Query: '{payload.message}'"
-            model = genai.GenerativeModel("gemini-3.5-flash")
+            model = genai.GenerativeModel("gemini-1.5-flash")
             response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
             res_json = json.loads(response.text.strip())
             has_spatial_intent = bool(res_json.get("has_spatial_intent", False))
@@ -1887,7 +1887,7 @@ async def escalate_issue(id: int, current_user: User = Depends(get_current_user)
     if GEMINI_API_KEY:
         try:
             prompt = f"Write a formal escalation email from a citizen to a ward councillor regarding an overdue civic issue: category '{issue.category}', description '{issue.description or issue.ai_summary}', location '{issue.address_string}', overdue by several days. Tone: firm, polite, official. Format: subject, dear councillor, body, sincerely."
-            model = genai.GenerativeModel("gemini-3.5-flash")
+            model = genai.GenerativeModel("gemini-1.5-flash")
             response = model.generate_content(prompt)
             draft_body = response.text.strip()
         except Exception as e:
@@ -2175,7 +2175,7 @@ def generate_morning_briefing():
         if GEMINI_API_KEY:
             try:
                 prompt = f"Write a concise morning briefing for a municipal admin. Tone: direct, factual, no fluff. Format: one paragraph summary, then a bullet list of 3–5 action items sorted by urgency. Data: {json.dumps(briefing_json)}"
-                model = genai.GenerativeModel("gemini-3.5-flash")
+                model = genai.GenerativeModel("gemini-1.5-flash")
                 response = model.generate_content(prompt)
                 content = response.text.strip()
             except Exception as gem_err:
