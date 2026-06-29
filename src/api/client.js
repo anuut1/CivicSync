@@ -2,7 +2,7 @@ import axios from 'axios';
 
 export const API_URL = import.meta.env.VITE_API_URL || 
   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-    ? ''
+    ? 'http://localhost:3000'
     : 'https://civicsync-db1v.onrender.com');
 
 const api = axios.create({ baseURL: `${API_URL}/api` });
@@ -10,9 +10,22 @@ const api = axios.create({ baseURL: `${API_URL}/api` });
 // attach JWT from localStorage on every request
 api.interceptors.request.use(config => {
   const token = localStorage.getItem('civisync_token');
-  if (token) config.headers.Authorization = `Bearer ${token}`;
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  } else {
+    delete config.headers.Authorization;
+  }
   return config;
 });
+
+// response interceptor for logging errors
+api.interceptors.response.use(
+  response => response,
+  error => {
+    console.error('API Error:', error.config?.url, error.response?.status, error.response?.data);
+    return Promise.reject(error);
+  }
+);
 
 export const reportIssue = (formData) => 
   api.post('/issues/report', formData, { 

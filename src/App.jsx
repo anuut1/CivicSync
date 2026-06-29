@@ -17,6 +17,23 @@ function App() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    const token = localStorage.getItem('civisync_token');
+    if (token) {
+      axios.get(`${API_URL}/api/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      .then(res => {
+        useStore.setState({ user: res.data });
+        localStorage.setItem('civisync_user', JSON.stringify(res.data));
+      })
+      .catch((err) => {
+        console.error("Token verification failed, logging out:", err);
+        logout();
+      });
+    }
+  }, [logout]);
+
+  useEffect(() => {
     const handlePopState = () => {
       setCurrentPath(window.location.pathname);
     };

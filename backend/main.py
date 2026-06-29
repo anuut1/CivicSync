@@ -244,7 +244,11 @@ class DailyBriefing(Base):
     content = Column(String, nullable=False)
 
 # Create tables
-Base.metadata.create_all(bind=engine)
+try:
+    Base.metadata.create_all(bind=engine)
+    print("✅ Database tables created")
+except Exception as e:
+    print(f"❌ Database error: {e}")
 
 def get_db():
     db = SessionLocal()
@@ -591,6 +595,10 @@ class AssignPayload(BaseModel):
     assigned_to: str
     eta_days: Optional[int] = None
 
+class AdminAssignRequest(BaseModel):
+    issue_id: int
+    department_id: int
+
 class ChatRequest(BaseModel):
     message: str
 
@@ -709,6 +717,16 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
             "role": user.role,
             "xp": user.xp
         }
+    }
+
+@router.get("/auth/me")
+def get_current_user_profile(current_user: User = Depends(get_current_user)):
+    return {
+        "id": current_user.id,
+        "name": current_user.name,
+        "email": current_user.email,
+        "role": current_user.role,
+        "xp": current_user.xp
     }
 
 # =====================================================================
@@ -1132,6 +1150,42 @@ def assign_issue(id: int, payload: AssignPayload, current_user: User = Depends(g
     db.refresh(issue)
     
     return issue
+
+@router.post("/admin/assign")
+def admin_assign_issue(payload: AdminAssignRequest, current_user: User = Depends(get_admin_user), db: Session = Depends(get_db)):
+    issue = db.query(Issue).filter(Issue.id == payload.issue_id).first()
+    if not issue:
+        raise HTTPException(status_code=404, detail="Issue not found")
+    
+    dept = db.query(Department).filter(Department.id == payload.department_id).first()
+    if not dept:
+        raise HTTPException(status_code=404, detail="Department not found")
+        
+    issue.assigned_department_id = payload.department_id
+    issue.assigned_to = dept.name
+    issue.status = "assigned"
+    
+    event = IssueEvent(
+        issue_id=issue.id,
+        event_type="assignment",
+        actor_role="Admin",
+        actor_name=current_user.name,
+        content=f"Assigned to {dept.name}",
+        created_at=datetime.utcnow()
+    )
+    db.add(event)
+    db.commit()
+    db.refresh(issue)
+    return {"success": True, "issue": issue}
+
+@router.post("/admin/seed")
+def admin_seed_endpoint(current_user: User = Depends(get_admin_user)):
+    from seed import seed_db
+    try:
+        seed_db()
+        return {"status": "success", "message": "Database successfully re-seeded"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Seeding failed: {str(e)}")
 
 @router.post("/issues/{id}/resolve")
 @router.patch("/issues/{id}/resolve")

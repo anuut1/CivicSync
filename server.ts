@@ -433,6 +433,18 @@ app.post("/api/auth/login", (req: Request, res: Response) => {
   });
 });
 
+// GET /api/auth/me
+app.get("/api/auth/me", requireUser, (req: Request, res: Response) => {
+  const user = (req as any).user as User;
+  res.json({
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    xp: user.xp,
+  });
+});
+
 // GET /api/issues/map
 app.get("/api/issues/map", (req: Request, res: Response) => {
   const { min_lat, max_lat, min_lon, max_lon } = req.query;
@@ -961,6 +973,54 @@ app.get("/api/users/leaderboard", (req: Request, res: Response) => {
     };
   });
   res.json(leaderboard);
+});
+
+// POST /api/admin/assign
+app.post("/api/admin/assign", requireAdmin, (req: Request, res: Response) => {
+  const { issue_id, department_id } = req.body;
+  const db = readDB();
+
+  const issue = db.issues.find((i) => i.id === issue_id);
+  if (!issue) {
+    return res.status(404).json({ detail: "Issue not found" });
+  }
+
+  const departments = [
+    { id: 1, name: "Roads & Highways Department" },
+    { id: 2, name: "Water Supply & Sewerage Board" },
+    { id: 3, name: "Electricity & Lighting Corporation" },
+    { id: 4, name: "Solid Waste Management Dept" }
+  ];
+  const dept = departments.find((d) => d.id === department_id);
+  if (!dept) {
+    return res.status(404).json({ detail: "Department not found" });
+  }
+
+  issue.assigned_department_id = department_id;
+  issue.assigned_to = dept.name;
+  issue.status = "assigned";
+
+  const newEvent: IssueEvent = {
+    id: (db.events || []).length + 1,
+    issue_id: issue.id,
+    event_type: "assignment",
+    actor_role: "Admin",
+    actor_name: "Municipal Admin",
+    content: `Assigned to ${dept.name}`,
+    created_at: new Date().toISOString(),
+  };
+
+  db.events = db.events || [];
+  db.events.push(newEvent);
+
+  writeDB(db);
+  res.json({ success: true, issue });
+});
+
+// POST /api/admin/seed
+app.post("/api/admin/seed", requireAdmin, (req: Request, res: Response) => {
+  writeDB(defaultDB);
+  res.json({ success: true, message: "Mock Database successfully reset to seed data" });
 });
 
 

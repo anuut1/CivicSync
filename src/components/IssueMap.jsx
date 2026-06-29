@@ -2,6 +2,12 @@ import React, { useEffect, useState, useRef } from 'react';
 import { MapContainer, TileLayer, CircleMarker, useMapEvents, useMap, Marker, Polygon } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
+import markerIcon from 'leaflet/dist/images/marker-icon.png';
+import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({ iconUrl: markerIcon, shadowUrl: markerShadow });
+
 import { useStore } from '../utils/store';
 import { getMapIssues } from '../api/client';
 import TopBar from './TopBar';
@@ -359,8 +365,8 @@ function IssueMap() {
   const mapRef = useRef(null);
 
   const containerStyle = {
-    width: '100%',
-    height: '100%',
+    width: '100vw',
+    height: '100vh',
     position: 'absolute',
     top: 0,
     left: 0,
