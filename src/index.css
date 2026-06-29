@@ -1,5 +1,23 @@
 @import "tailwindcss";
 
+:root {
+  --brand-dark: #0f172a;
+  --brand-primary: #0f4c5c;
+  --brand-secondary: #065f46;
+  --brand-gradient: linear-gradient(135deg, #0f4c5c, #065f46);
+  --surface-nav: #ffffff;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+  --border: #e2e8f0;
+  --input-bg: #f8fafc;
+  --accent: #0f4c5c;
+  --success: #065f46;
+  --danger: #dc2626;
+  --warning: #d97706;
+}
+
+
 /* Custom premium micro-animations */
 @keyframes marker-bounce {
   0% {

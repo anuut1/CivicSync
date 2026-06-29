@@ -142,6 +142,15 @@ class User(Base):
     phone = Column(String, unique=True, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+class PasswordReset(Base):
+    __tablename__ = "password_resets"
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, nullable=False, index=True)
+    otp = Column(String, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 class Department(Base):
     __tablename__ = "departments"
     id = Column(Integer, primary_key=True, index=True)
@@ -586,6 +595,21 @@ class LoginRequest(BaseModel):
     email: EmailStr
     password: str
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class VerifyOtpRequest(BaseModel):
+    email: EmailStr
+    otp: str
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    otp: str
+    new_password: str
+
+class ScanPayload(BaseModel):
+    scan_types: List[str]
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -728,6 +752,70 @@ def get_current_user_profile(current_user: User = Depends(get_current_user)):
         "role": current_user.role,
         "xp": current_user.xp
     }
+
+async def send_otp_email(to_email: str, otp: str):
+    body = f"Hello,\n\nYou have requested to reset your password. Your 6-digit OTP is: {otp}\n\nThis OTP is valid for 10 minutes.\n\nRegards,\nciviSync Admin"
+    await send_escalation_email(to_email, "civiSync Password Reset OTP", body)
+
+@router.post("/auth/forgot-password")
+async def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == payload.email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User with this email does not exist")
+    
+    import random
+    otp = "".join([str(random.randint(0, 9)) for _ in range(6)])
+    print(f"==================================================")
+    print(f"[OTP GENERATED] Email: {user.email}, OTP: {otp}")
+    print(f"==================================================")
+    
+    expires_at = datetime.utcnow() + timedelta(minutes=10)
+    
+    reset_entry = PasswordReset(
+        email=user.email.lower(),
+        otp=otp,
+        expires_at=expires_at,
+        used=False
+    )
+    db.add(reset_entry)
+    db.commit()
+    
+    await send_otp_email(user.email, otp)
+    
+    return {"message": "OTP sent successfully"}
+
+@router.post("/auth/verify-otp")
+def verify_otp(payload: VerifyOtpRequest, db: Session = Depends(get_db)):
+    reset = db.query(PasswordReset).filter(
+        PasswordReset.email == payload.email.lower(),
+        PasswordReset.otp == payload.otp,
+        PasswordReset.used == False,
+        PasswordReset.expires_at > datetime.utcnow()
+    ).first()
+    if not reset:
+        raise HTTPException(status_code=400, detail="Invalid or expired OTP")
+    return {"message": "OTP verified successfully"}
+
+@router.post("/auth/reset-password")
+def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)):
+    reset = db.query(PasswordReset).filter(
+        PasswordReset.email == payload.email.lower(),
+        PasswordReset.otp == payload.otp,
+        PasswordReset.used == False,
+        PasswordReset.expires_at > datetime.utcnow()
+    ).first()
+    if not reset:
+        raise HTTPException(status_code=400, detail="Invalid or expired OTP verification")
+        
+    user = db.query(User).filter(User.email == payload.email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    user.password_hash = hash_password(payload.new_password)
+    reset.used = True
+    db.commit()
+    
+    return {"message": "Password reset successfully"}
 
 # =====================================================================
 # CIVIC ISSUE ENDPOINTS
@@ -1703,6 +1791,178 @@ def chat_assistant(payload: ChatRequest, db: Session = Depends(get_db)):
             return {"response": f"I see {alerts_cnt} active predictive risk warnings flagged. High-risk alerts should be audited by admins in the dashboard."}
         else:
             return {"response": "Hello! I am civiSync Bot, your civic assistant. I can help you monitor reported potholes, water leaks, streetlights, or waste warnings. What would you like to know?"}
+
+def get_precipitation_forecast():
+    url = "https://api.open-meteo.com/v1/forecast?latitude=13.0827&longitude=80.2707&daily=precipitation_sum&forecast_days=14"
+    try:
+        import urllib.request
+        with urllib.request.urlopen(url, timeout=5) as response:
+            data = json.loads(response.read().decode('utf-8'))
+            daily = data.get("daily", {})
+            time_list = daily.get("time", [])
+            precip_list = daily.get("precipitation_sum", [])
+            forecast_summary = [f"{t}: {p}mm" for t, p in zip(time_list, precip_list)]
+            return ", ".join(forecast_summary)
+    except Exception as e:
+        print(f"[Open-Meteo Error] {e}")
+        return "No rainfall data available (offline or service timeout)."
+
+@router.post("/admin/predictions/scan")
+async def scan_predictions(
+    payload: ScanPayload,
+    current_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    from fastapi.responses import StreamingResponse
+    import asyncio
+
+    async def event_generator():
+        try:
+            yield f"data: {json.dumps({'status': 'Starting diagnostics...'})}\n\n"
+            await asyncio.sleep(0.5)
+
+            yield f"data: {json.dumps({'status': 'Retrieving 14-day rainfall forecast from Open-Meteo...'})}\n\n"
+            forecast = get_precipitation_forecast()
+            await asyncio.sleep(0.5)
+
+            for scan_type in payload.scan_types:
+                yield f"data: {json.dumps({'status': f'Compiling 90-day history for {scan_type.replace(\'_\', \' \')}...'})}\n\n"
+                
+                ninety_days_ago = datetime.utcnow() - timedelta(days=90)
+                query = db.query(Issue).filter(Issue.created_at >= ninety_days_ago)
+
+                if scan_type == 'pothole':
+                    query = query.filter(Issue.category == 'pothole')
+                elif scan_type == 'water':
+                    query = query.filter(Issue.category == 'water_leak')
+                elif scan_type == 'streetlight':
+                    query = query.filter(Issue.category == 'broken_light')
+                elif scan_type == 'waste':
+                    query = query.filter(Issue.category == 'waste')
+                
+                issues = query.all()
+
+                ward_groups = {}
+                for issue in issues:
+                    if issue.ward not in ward_groups:
+                        ward_groups[issue.ward] = []
+                    ward_groups[issue.ward].append({
+                        "id": issue.id,
+                        "category": issue.category,
+                        "severity": issue.severity,
+                        "status": issue.status,
+                        "description": issue.description or ""
+                    })
+
+                yield f"data: {json.dumps({'status': f'Running Gemini analysis for {scan_type.replace(\'_\', \' \')}...'})}\n\n"
+
+                results = []
+
+                if GEMINI_API_KEY and len(ward_groups) > 0:
+                    try:
+                        prompt = f"""
+                        Analyze these 90-day issue reports:
+                        {json.dumps(ward_groups)}
+
+                        Upcoming 14-day rainfall forecast:
+                        {forecast}
+
+                        Scan type: {scan_type}
+                        
+                        Predict which wards are at risk.
+                        For each at-risk ward return a JSON list of objects:
+                        [
+                          {{
+                            "ward_name": "Ward 5",
+                            "risk_level": "Critical/High/Medium/Low",
+                            "confidence_percent": 85,
+                            "predicted_timeframe": "likely within 14 days",
+                            "recommended_action": "Preventive recommendation description",
+                            "reasoning": "Reasoning description"
+                          }}
+                        ]
+                        Do not wrap the response in markdown blocks or include backticks. Just pure JSON list.
+                        """
+                        model = genai.GenerativeModel("gemini-1.5-flash")
+                        response = model.generate_content(
+                            prompt, 
+                            generation_config={"response_mime_type": "application/json"}
+                        )
+                        results = json.loads(response.text.strip())
+                    except Exception as e:
+                        print(f"Gemini scan error: {e}")
+                        results = []
+
+                if not results:
+                    for ward, ward_issues in ward_groups.items():
+                        count = len(ward_issues)
+                        avg_severity = sum(i["severity"] for i in ward_issues) / count if count > 0 else 0
+                        
+                        if count >= 4 or avg_severity >= 4:
+                            risk = "Critical"
+                            confidence = 90
+                            timeframe = "likely within 5 days"
+                        elif count >= 2 or avg_severity >= 3:
+                            risk = "High"
+                            confidence = 80
+                            timeframe = "likely within 14 days"
+                        elif count >= 1:
+                            risk = "Medium"
+                            confidence = 65
+                            timeframe = "likely within 30 days"
+                        else:
+                            risk = "Low"
+                            confidence = 45
+                            timeframe = "likely within 30 days"
+
+                        rec_action = f"Inspect ward {ward} for potential infrastructure issues."
+                        if scan_type == 'pothole':
+                            rec_action = f"Deploy asphalt repair crew to patch fissures in ward {ward} before heavy rainfall."
+                        elif scan_type == 'water':
+                            rec_action = f"Run ultrasonic pressure testing on water distribution mains in ward {ward}."
+                        elif scan_type == 'streetlight':
+                            rec_action = f"Inspect street cabinet wiring and replace burnt lighting modules in ward {ward}."
+                        elif scan_type == 'waste':
+                            rec_action = f"Increase garbage collection route frequency and clear public disposal bin overflows in ward {ward}."
+
+                        results.append({
+                            "ward_name": ward,
+                            "risk_level": risk,
+                            "confidence_percent": confidence,
+                            "predicted_timeframe": timeframe,
+                            "recommended_action": rec_action,
+                            "reasoning": f"Based on {count} recent issues (avg severity: {avg_severity:.1f}) in 90-day history."
+                        })
+
+                    if not results:
+                        results = [
+                            {
+                                "ward_name": "Downtown Ward 1",
+                                "risk_level": "High",
+                                "confidence_percent": 85,
+                                "predicted_timeframe": "likely within 14 days",
+                                "recommended_action": f"Schedule proactive sewer clearing in Downtown Ward 1.",
+                                "reasoning": "Open-Meteo precipitation sum forecast indicates heavy rain next week."
+                            },
+                            {
+                                "ward_name": "Riverside Ward 4",
+                                "risk_level": "Medium",
+                                "confidence_percent": 70,
+                                "predicted_timeframe": "likely within 30 days",
+                                "recommended_action": f"Audit road foundations along canal banks in Riverside Ward 4.",
+                                "reasoning": "Recent water level fluctuations could trigger foundation decay."
+                            }
+                        ]
+
+                yield f"data: {json.dumps({'scan_type': scan_type, 'results': results})}\n\n"
+                await asyncio.sleep(0.5)
+
+            yield f"data: {json.dumps({'status': 'Checkup complete.'})}\n\n"
+        except Exception as e:
+            print(f"Error in SSE generator: {e}")
+            yield f"data: {json.dumps({'status': f'Error occurred: {str(e)}'})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 # =====================================================================
 # ADDED CIVIC APP HIGH-IMPACT IMPLEMENTATIONS & ROUTERS

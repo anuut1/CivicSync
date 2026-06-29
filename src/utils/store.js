@@ -74,5 +74,6 @@ export const useStore = create((set) => ({
     localStorage.removeItem('civisync_token');
     localStorage.removeItem('civisync_user');
     set({ token: null, user: null, selectedIssue: null, showReportForm: false });
+    window.location.href = '/';
   }
 }));

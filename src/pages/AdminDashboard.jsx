@@ -148,6 +148,13 @@ function AdminDashboard({ navigate }) {
   const [loading, setLoading] = useState(false);
   const [predicting, setPredicting] = useState(false);
 
+  // Proactive Scan System States
+  const [scanPhase, setScanPhase] = useState(1); // 1 = selection, 2 = running/results
+  const [selectedScans, setSelectedScans] = useState([]);
+  const [scanning, setScanning] = useState(false);
+  const [scanResults, setScanResults] = useState([]);
+  const [scanStatus, setScanStatus] = useState('');
+
   // Daily AI Briefings
   const [briefing, setBriefing] = useState(null);
   const [prevBriefings, setPrevBriefings] = useState([]);
@@ -202,23 +209,134 @@ function AdminDashboard({ navigate }) {
   };
 
   useEffect(() => {
+    const localToken = localStorage.getItem('civisync_token');
+    const localUser = localStorage.getItem('civisync_user');
+    if (!localToken || !localUser) {
+      window.location.href = '/';
+      return;
+    }
     fetchAllData();
   }, []);
 
-  const handleRunPredictions = async () => {
-    setPredicting(true);
+  const handleRunScans = async (scansToRun) => {
+    setScanPhase(2);
+    setScanning(true);
+    setScanResults([]);
+    setScanStatus('Initiating proactive checkup scan...');
+
     try {
-      const response = await compilePredictions();
-      alert(response.data.message || 'Risk warnings recompiled.');
-      // Refresh
-      const alertsRes = await getActiveAlerts();
-      setAlerts(alertsRes.data);
+      const token = localStorage.getItem('civisync_token');
+      // Using fetch readable stream reader for Server-Sent Events (SSE) stream consumption
+      const response = await fetch(`${API_URL}/api/admin/predictions/scan`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ scan_types: scansToRun })
+      });
+
+      if (!response.ok) {
+        throw new Error('Scan request failed');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed.startsWith('data: ')) {
+            try {
+              const dataStr = trimmed.slice(6);
+              const data = JSON.parse(dataStr);
+              if (data.status) {
+                setScanStatus(data.status);
+              } else if (data.scan_type && data.results) {
+                setScanResults(prev => {
+                  const filtered = prev.filter(r => r.scan_type !== data.scan_type);
+                  return [...filtered, data];
+                });
+              }
+            } catch (e) {
+              console.error('Error parsing SSE line:', e);
+            }
+          }
+        }
+      }
+
+      setScanStatus('Checkup scan complete.');
     } catch (err) {
       console.error(err);
-      alert('AI predictions recompilation failed.');
+      setScanStatus('Scan failed: ' + err.message);
     } finally {
-      setPredicting(false);
+      setScanning(false);
     }
+  };
+
+  const handleExportPDF = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    const content = `
+      <html>
+        <head>
+          <title>civiSync Proactive Scan Report</title>
+          <style>
+            body { font-family: sans-serif; padding: 20px; color: #1e293b; }
+            h1 { color: #0f4c5c; margin-bottom: 5px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th, td { border: 1px solid #cbd5e1; padding: 12px; text-align: left; }
+            th { background-color: #f1f5f9; }
+            .badge { padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 12px; text-transform: uppercase; }
+            .Critical { background-color: #fee2e2; color: #dc2626; }
+            .High { background-color: #ffedd5; color: #ea580c; }
+            .Medium { background-color: #fef9c3; color: #ca8a04; }
+            .Low { background-color: #dcfce7; color: #16a34a; }
+          </style>
+        </head>
+        <body>
+          <h1>civiSync Proactive Scan Report</h1>
+          <p>Generated on ${new Date().toLocaleDateString()}</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Scan Type</th>
+                <th>Ward</th>
+                <th>Risk Level</th>
+                <th>Category</th>
+                <th>Confidence</th>
+                <th>Timeframe</th>
+                <th>Recommended Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${scanResults.map(r => (r.results || []).map(item => `
+                <tr>
+                  <td><strong>${r.scan_type.toUpperCase()}</strong></td>
+                  <td>${item.ward_name}</td>
+                  <td><span class="badge ${item.risk_level}">${item.risk_level}</span></td>
+                  <td>${item.category || item.predicted_issue_category}</td>
+                  <td>${item.confidence_percent || item.confidence}%</td>
+                  <td>${item.predicted_timeframe || item.timeframe}</td>
+                  <td>${item.recommended_action}</td>
+                </tr>
+              `).join('')).join('')}
+            </tbody>
+          </table>
+          <script>window.print();</script>
+        </body>
+      </html>
+    `;
+    printWindow.document.write(content);
+    printWindow.document.close();
   };
 
   // Assign to department action
@@ -472,15 +590,7 @@ function AdminDashboard({ navigate }) {
           </button>
           <h1 style={{ margin: 0, fontSize: '24px', fontWeight: '800' }}>Admin Console</h1>
         </div>
-        {activeTab === 'alerts' && (
-          <button
-            onClick={handleRunPredictions}
-            disabled={predicting}
-            style={recompileBtnStyle}
-          >
-            {predicting ? 'Compiling...' : 'Recompile Risk'}
-          </button>
-        )}
+
       </div>
 
       {/* Daily AI Briefing Dismissible Banner (Feature 12) */}
@@ -743,41 +853,304 @@ function AdminDashboard({ navigate }) {
       {/* TAB CONTENT: AI PREDICTIONS */}
       {activeTab === 'alerts' && (
         <div>
-          {alerts.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '40px', backgroundColor: '#ffffff', borderRadius: '16px', color: '#64748b' }}>
-              No risk warnings compiled. Press Recompile Risk.
+          {scanPhase === 1 ? (
+            // PHASE 1: CHECKUP OPTIONS SCREEN
+            <div>
+              <div style={{ marginBottom: '24px', textAlign: 'center' }}>
+                <h3 style={{ margin: '0 0 6px 0', fontSize: '18px', fontWeight: 'bold', color: '#0f172a' }}>
+                  Proactive City Risk Checkup
+                </h3>
+                <p style={{ margin: 0, fontSize: '13.5px', color: '#475569' }}>
+                  Select one or multiple risk checkup scans to run diagnostics. Estimated time: ~15 seconds per scan.
+                </p>
+              </div>
+
+              {/* 3x2 Scan Grid */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+                gap: '16px',
+                marginBottom: '24px'
+              }}>
+                {[
+                  { id: 'pothole', icon: '🕳️', title: 'Pothole Risk Scan', desc: 'Analyse road condition patterns and rainfall data to forecast pothole hotspots next 30 days' },
+                  { id: 'water', icon: '💧', title: 'Water Infrastructure Scan', desc: 'Identify wards at risk of pipe bursts or leak surges based on issue history and seasonal data' },
+                  { id: 'streetlight', icon: '💡', title: 'Streetlight Failure Scan', desc: 'Predict which wards will see electrical failures based on complaint frequency trends' },
+                  { id: 'waste', icon: '🗑️', title: 'Waste Management Scan', desc: 'Forecast overflow risk areas based on collection gaps and complaint density' },
+                  { id: 'monsoon', icon: '⛈️', title: 'Post-Monsoon Impact Scan', desc: 'Full ward-by-ward risk assessment for the upcoming monsoon season' },
+                  { id: 'full', icon: '🏥', title: 'Full City Health Scan', desc: 'Run all five scans simultaneously and generate a complete city risk briefing' }
+                ].map((scan) => {
+                  const isSelected = selectedScans.includes(scan.id);
+                  return (
+                    <div
+                      key={scan.id}
+                      onClick={() => {
+                        setSelectedScans(prev =>
+                          isSelected ? prev.filter(s => s !== scan.id) : [...prev, scan.id]
+                        );
+                      }}
+                      style={{
+                        backgroundColor: '#ffffff',
+                        border: isSelected ? '2px solid #0f4c5c' : '1.5px solid #e2e8f0',
+                        borderRadius: '16px',
+                        padding: '16px',
+                        cursor: 'pointer',
+                        position: 'relative',
+                        transition: 'all 0.15s',
+                        boxShadow: isSelected ? '0 4px 15px rgba(15, 76, 92, 0.08)' : 'none',
+                      }}
+                    >
+                      {/* Checkbox */}
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => {}} // Handled by parent onClick
+                        style={{
+                          position: 'absolute',
+                          right: '16px',
+                          top: '16px',
+                          cursor: 'pointer',
+                          width: '16px',
+                          height: '16px',
+                          accentColor: '#0f4c5c'
+                        }}
+                      />
+                      <div style={{ fontSize: '32px', marginBottom: '10px' }}>{scan.icon}</div>
+                      <h4 style={{ margin: '0 0 6px 0', fontSize: '15px', fontWeight: 'bold', color: '#0f172a' }}>
+                        {scan.title}
+                      </h4>
+                      <p style={{ margin: 0, fontSize: '12.5px', color: '#64748b', lineHeight: 1.4 }}>
+                        {scan.desc}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedScans([scan.id]);
+                          handleRunScans([scan.id]);
+                        }}
+                        style={{
+                          marginTop: '14px',
+                          width: '100%',
+                          padding: '8px',
+                          borderRadius: '8px',
+                          border: '1.5px solid #0f4c5c',
+                          background: 'none',
+                          color: '#0f4c5c',
+                          fontWeight: 'bold',
+                          fontSize: '12px',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s'
+                        }}
+                      >
+                        Run Scan
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Primary Run Scans Button */}
+              <div style={{ display: 'flex', justifyContent: 'center' }}>
+                <button
+                  type="button"
+                  onClick={() => handleRunScans(selectedScans)}
+                  disabled={selectedScans.length === 0}
+                  style={{
+                    padding: '12px 32px',
+                    borderRadius: '10px',
+                    background: selectedScans.length > 0 ? 'linear-gradient(135deg, #0f4c5c, #065f46)' : '#cbd5e1',
+                    color: '#ffffff',
+                    border: 'none',
+                    fontWeight: 'bold',
+                    fontSize: '14px',
+                    cursor: selectedScans.length > 0 ? 'pointer' : 'not-allowed',
+                    transition: 'all 0.15s'
+                  }}
+                >
+                  Run Selected Scans ({selectedScans.length})
+                </button>
+              </div>
             </div>
           ) : (
-            alerts.map((alertItem) => (
-              <div key={alertItem.id} style={{
+            // PHASE 2: RESULTS SCREEN
+            <div>
+              {/* Toolbar */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
                 backgroundColor: '#ffffff',
                 border: '1.5px solid #e2e8f0',
                 borderRadius: '16px',
-                padding: '16px',
-                marginBottom: '12px',
-                borderLeft: `5px solid ${getRiskColor(alertItem.risk_level)}`,
-                display: 'flex',
-                gap: '12px'
+                padding: '12px 16px',
+                marginBottom: '20px'
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px' }}>
-                  {getRiskArrow(alertItem.risk_level)}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                    <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 'bold' }}>{alertItem.ward}</h4>
-                    <span style={{ fontSize: '11px', fontWeight: 'bold', color: getRiskColor(alertItem.risk_level), textTransform: 'uppercase' }}>
-                      {alertItem.risk_level} Risk
-                    </span>
-                  </div>
-                  <p style={{ margin: '0 0 6px 0', fontSize: '13px', color: '#475569', lineHeight: '1.4' }}>
-                    {alertItem.summary}
-                  </p>
-                  <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '600' }}>
-                    Predicted Category: {categoryEmojis[alertItem.category] || '⚠️'} {alertItem.category?.replace('_', ' ') || 'other'}
-                  </div>
+                <button
+                  type="button"
+                  onClick={() => setScanPhase(1)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#0f4c5c',
+                    fontWeight: 'bold',
+                    fontSize: '13.5px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  &larr; Back to Scan Selector
+                </button>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => handleRunScans(selectedScans)}
+                    disabled={scanning}
+                    style={{
+                      padding: '8px 16px',
+                      borderRadius: '8px',
+                      border: '1.5px solid #e2e8f0',
+                      background: '#ffffff',
+                      color: '#0f172a',
+                      fontWeight: 'bold',
+                      fontSize: '12.5px',
+                      cursor: scanning ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    🔄 Re-run Scan
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleExportPDF}
+                    disabled={scanResults.length === 0}
+                    style={{
+                      padding: '8px 16px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: scanResults.length > 0 ? 'linear-gradient(135deg, #0f4c5c, #065f46)' : '#cbd5e1',
+                      color: '#ffffff',
+                      fontWeight: 'bold',
+                      fontSize: '12.5px',
+                      cursor: scanResults.length > 0 ? 'pointer' : 'not-allowed'
+                    }}
+                  >
+                    📄 Export as PDF
+                  </button>
                 </div>
               </div>
-            ))
+
+              {/* Status Header */}
+              <div style={{
+                backgroundColor: scanning ? '#eff6ff' : '#f0fdf4',
+                border: scanning ? '1px solid #bfdbfe' : '1px solid #bbf7d0',
+                borderRadius: '10px',
+                padding: '10px 14px',
+                fontSize: '13.5px',
+                color: scanning ? '#1e3a8a' : '#15803d',
+                marginBottom: '20px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                {scanning && (
+                  <svg className="animate-spin" style={{ width: '16px', height: '16px' }} viewBox="0 0 24 24" fill="none">
+                    <circle style={{ opacity: 0.25 }} cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path style={{ opacity: 0.75 }} fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                )}
+                <span>{scanStatus}</span>
+              </div>
+
+              {/* Real-time SSE Results List */}
+              {scanResults.length === 0 && scanning ? (
+                <div style={{ textAlign: 'center', padding: '60px 20px', color: '#64748b' }}>
+                  <div style={{ fontSize: '40px', marginBottom: '12px' }}>🤖</div>
+                  <h4 style={{ margin: '0 0 4px 0', fontWeight: 'bold', color: '#0f172a' }}>AI Diagnostics in Progress</h4>
+                  <p style={{ margin: 0, fontSize: '13px' }}>Generating smart forecasts based on 90-day issue history...</p>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {scanResults.map((scanGroup) => (
+                    <div key={scanGroup.scan_type} style={{
+                      backgroundColor: '#f8fafc',
+                      borderRadius: '16px',
+                      padding: '16px',
+                      border: '1.5px solid #e2e8f0'
+                    }}>
+                      <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        🔍 {scanGroup.scan_type.replace('_', ' ')} scan results
+                      </h4>
+
+                      {(!scanGroup.results || scanGroup.results.length === 0) ? (
+                        <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>No risk areas detected for this category.</p>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                          {scanGroup.results.map((item, idx) => {
+                            const riskColors = {
+                              Critical: { text: '#dc2626', bg: '#fef2f2', border: '#fecaca', arrow: '▲' },
+                              High: { text: '#ea580c', bg: '#fffedd', border: '#ffedd5', arrow: '▲' },
+                              Medium: { text: '#ca8a04', bg: '#fef9c3', border: '#fef08a', arrow: '●' },
+                              Low: { text: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0', arrow: '▼' }
+                            };
+                            const style = riskColors[item.risk_level] || riskColors.Low;
+                            return (
+                              <div
+                                key={idx}
+                                style={{
+                                  backgroundColor: '#ffffff',
+                                  border: '1.5px solid #e2e8f0',
+                                  borderRadius: '12px',
+                                  padding: '14px',
+                                  borderLeft: `5px solid ${style.text}`,
+                                  display: 'flex',
+                                  gap: '12px'
+                                }}
+                              >
+                                <div style={{ fontSize: '20px', display: 'flex', alignItems: 'center', color: style.text, fontWeight: 'bold' }}>
+                                  {style.arrow}
+                                </div>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                    <span style={{ fontSize: '15px', fontWeight: 'bold', color: '#0f172a' }}>{item.ward_name}</span>
+                                    <span style={{
+                                      fontSize: '11px',
+                                      fontWeight: '800',
+                                      color: style.text,
+                                      backgroundColor: style.bg,
+                                      border: `1px solid ${style.border}`,
+                                      padding: '2px 8px',
+                                      borderRadius: '6px',
+                                      textTransform: 'uppercase'
+                                    }}>
+                                      {item.risk_level} Risk
+                                    </span>
+                                  </div>
+                                  <p style={{ margin: '0 0 6px 0', fontSize: '13.5px', color: '#334155', fontWeight: '500' }}>
+                                    <strong>Recommendation:</strong> {item.recommended_action}
+                                  </p>
+                                  {item.reasoning && (
+                                    <p style={{ margin: '0 0 8px 0', fontSize: '12.5px', color: '#64748b', lineHeight: 1.4 }}>
+                                      {item.reasoning}
+                                    </p>
+                                  )}
+                                  <div style={{ display: 'flex', gap: '16px', fontSize: '11px', color: '#475569', fontWeight: 'bold', borderTop: '1px solid #f1f5f9', paddingTop: '8px' }}>
+                                    <span>🎯 Category: {item.category || item.predicted_issue_category}</span>
+                                    <span>⏱️ Timeframe: {item.predicted_timeframe || item.timeframe}</span>
+                                    <span>📈 Confidence: {item.confidence_percent || item.confidence}%</span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}

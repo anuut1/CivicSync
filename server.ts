@@ -84,6 +84,14 @@ interface Comment {
   created_at: string;
 }
 
+interface PasswordReset {
+  id: number;
+  email: string;
+  otp: string;
+  expires_at: string;
+  used: boolean;
+}
+
 interface DB {
   users: User[];
   issues: Issue[];
@@ -91,6 +99,7 @@ interface DB {
   alerts: PredictiveAlert[];
   events: IssueEvent[];
   comments: Comment[];
+  password_resets: PasswordReset[];
 }
 
 const defaultDB: DB = {
@@ -213,7 +222,8 @@ const defaultDB: DB = {
     }
   ],
   events: [],
-  comments: []
+  comments: [],
+  password_resets: []
 };
 
 function readDB(): DB {
@@ -225,6 +235,7 @@ function readDB(): DB {
     const db = JSON.parse(fs.readFileSync(DATA_FILE, "utf-8"));
     db.events = db.events || [];
     db.comments = db.comments || [];
+    db.password_resets = db.password_resets || [];
     return db;
   } catch (err) {
     console.error("DB reading error", err);
@@ -444,6 +455,68 @@ app.get("/api/auth/me", requireUser, (req: Request, res: Response) => {
     xp: user.xp,
   });
 });
+
+// POST /api/auth/forgot-password
+app.post("/api/auth/forgot-password", (req: Request, res: Response) => {
+  const { email } = req.body;
+  const db = readDB();
+  const user = db.users.find(u => u.email.toLowerCase() === email.toLowerCase());
+  if (!user) {
+    return res.status(404).json({ detail: "User with this email does not exist" });
+  }
+
+  // Generate 6-digit OTP code (always 123456 in mock environment for development convenience)
+  const otp = "123456";
+  const expires_at = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutes expiry
+
+  const newReset: PasswordReset = {
+    id: db.password_resets.length + 1,
+    email: email.toLowerCase(),
+    otp,
+    expires_at,
+    used: false
+  };
+
+  db.password_resets.push(newReset);
+  writeDB(db);
+
+  console.log(`[Mock OTP Sent] Email: ${email}, OTP: ${otp}`);
+  res.json({ message: "OTP sent successfully" });
+});
+
+// POST /api/auth/verify-otp
+app.post("/api/auth/verify-otp", (req: Request, res: Response) => {
+  const { email, otp } = req.body;
+  const db = readDB();
+  const reset = db.password_resets.find(r => r.email === email.toLowerCase() && r.otp === otp && !r.used && new Date(r.expires_at) > new Date());
+  if (!reset) {
+    return res.status(400).json({ detail: "Invalid or expired OTP" });
+  }
+  res.json({ message: "OTP verified successfully" });
+});
+
+// POST /api/auth/reset-password
+app.post("/api/auth/reset-password", (req: Request, res: Response) => {
+  const { email, otp, new_password } = req.body;
+  const db = readDB();
+  const resetIndex = db.password_resets.findIndex(r => r.email === email.toLowerCase() && r.otp === otp && !r.used && new Date(r.expires_at) > new Date());
+  if (resetIndex === -1) {
+    return res.status(400).json({ detail: "Invalid or expired OTP verification" });
+  }
+
+  const user = db.users.find(u => u.email.toLowerCase() === email.toLowerCase());
+  if (!user) {
+    return res.status(404).json({ detail: "User not found" });
+  }
+
+  // Update password
+  user.password_hash = new_password; // In mock, plaintext is fine
+  db.password_resets[resetIndex].used = true;
+  writeDB(db);
+
+  res.json({ message: "Password reset successfully" });
+});
+
 
 // GET /api/issues/map
 app.get("/api/issues/map", (req: Request, res: Response) => {
@@ -1022,6 +1095,85 @@ app.post("/api/admin/seed", requireAdmin, (req: Request, res: Response) => {
   writeDB(defaultDB);
   res.json({ success: true, message: "Mock Database successfully reset to seed data" });
 });
+
+// POST /api/admin/predictions/scan
+app.post("/api/admin/predictions/scan", requireAdmin, async (req: Request, res: Response) => {
+  const { scan_types } = req.body;
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  res.write(`data: ${JSON.stringify({ status: "Starting diagnostics..." })}\n\n`);
+
+  for (const scanType of scan_types) {
+    res.write(`data: ${JSON.stringify({ status: `Running ${scanType.replace('_', ' ')} risk analysis...` })}\n\n`);
+    await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate processing
+
+    let mockResults: any[] = [];
+    if (scanType === 'pothole' || scanType === 'full') {
+      mockResults.push({
+        ward_name: "Downtown Ward 1",
+        risk_level: "High",
+        category: "pothole",
+        confidence_percent: 88,
+        predicted_timeframe: "likely within 7 days",
+        recommended_action: "Schedule emergency patching on Main St.",
+        reasoning: "High traffic combined with heavy forecasted rainfall makes pavement stress critical."
+      });
+    }
+    if (scanType === 'water' || scanType === 'full') {
+      mockResults.push({
+        ward_name: "Riverside Ward 4",
+        risk_level: "Critical",
+        category: "water_leak",
+        confidence_percent: 92,
+        predicted_timeframe: "likely within 3 days",
+        recommended_action: "Inspect water valve pressure on North Ave.",
+        reasoning: "Recent water pressure spikes detected coupled with aged infrastructure history."
+      });
+    }
+    if (scanType === 'streetlight' || scanType === 'full') {
+      mockResults.push({
+        ward_name: "Suburbs Ward 8",
+        risk_level: "Medium",
+        category: "broken_light",
+        confidence_percent: 75,
+        predicted_timeframe: "likely within 14 days",
+        recommended_action: "Replace sub-station line transformers.",
+        reasoning: "Repeated line failures reported over the last 90 days indicate structural decay."
+      });
+    }
+    if (scanType === 'waste' || scanType === 'full') {
+      mockResults.push({
+        ward_name: "West End Ward 3",
+        risk_level: "Low",
+        category: "waste",
+        confidence_percent: 60,
+        predicted_timeframe: "likely within 14 days",
+        recommended_action: "Increase waste collection frequency to twice daily.",
+        reasoning: "Minor landfill capacity issue forecast; regular trash runs are sufficient."
+      });
+    }
+    if (scanType === 'monsoon' || scanType === 'full') {
+      mockResults.push({
+        ward_name: "Coastal Ward 2",
+        risk_level: "Critical",
+        category: "water_leak",
+        confidence_percent: 95,
+        predicted_timeframe: "likely within 5 days",
+        recommended_action: "Deploy sandbags and inspect stormwater drains.",
+        reasoning: "Low-lying area vulnerable to flooding during high-precipitation monsoon forecast."
+      });
+    }
+
+    res.write(`data: ${JSON.stringify({ scan_type: scanType, results: mockResults })}\n\n`);
+  }
+
+  res.write(`data: ${JSON.stringify({ status: "Checkup complete." })}\n\n`);
+  res.end();
+});
+
 
 
 // POST /api/issues/:id/resolve
