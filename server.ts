@@ -872,6 +872,149 @@ app.get("/api/alerts/leaderboard", (req: Request, res: Response) => {
   res.json(leaderboard);
 });
 
+// POST /api/chat
+app.post("/api/chat", async (req: Request, res: Response) => {
+  const { message } = req.body;
+  const db = readDB();
+
+  const issuesSummary = db.issues.map((i) => ({
+    id: i.id,
+    category: i.category,
+    status: i.status,
+    ward: i.ward,
+    severity: i.severity,
+    summary: i.ai_summary || i.description || "",
+    votes: i.vote_count
+  }));
+
+  const activeAlerts = db.alerts.filter((a) => a.active);
+  const alertsSummary = activeAlerts.map((a) => ({
+    ward: a.ward,
+    category: a.category,
+    risk: a.risk_level,
+    summary: a.summary
+  }));
+
+  const context = `
+  You are "civiSync Bot", an intelligent AI civic assistant for municipal wards in Indian cities.
+  Here is the current real-time database state of civic issues and predictive warning alerts in the city:
+
+  ISSUES REPORTED BY CITIZENS:
+  ${JSON.stringify(issuesSummary, null, 2)}
+
+  ACTIVE PREDICTIVE ALERTS:
+  ${JSON.stringify(alertsSummary, null, 2)}
+
+  Respond to the user's query: "${message}".
+  Be helpful, concise (maximum 3-4 sentences), and friendly.
+  Always refer to the real-time issues and alerts provided above to give specific numbers, locations, or status updates when answering.
+  If a user asks how to report an issue, explain that they can click the floating "+" button on the map.
+  `;
+
+  if (ai) {
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-1.5-flash",
+        contents: context
+      });
+      return res.json({ response: response.text.trim() });
+    } catch (err: any) {
+      console.error("Gemini Chat Bot API error:", err);
+      return res.status(500).json({ detail: "Sorry, I am having trouble connecting to my brain right now. Can you try again later?" });
+    }
+  } else {
+    // Fallback local heuristics responses
+    const msg = message.toLowerCase();
+    if (msg.includes("pothole") || msg.includes("road")) {
+      const potholeCount = db.issues.filter((i) => i.category === "pothole").length;
+      return res.json({ response: `We currently track ${potholeCount} reported pothole hazards in the database. You can locate them colored orange (pending) or blue (assigned) on the map.` });
+    } else if (msg.includes("leak") || msg.includes("water")) {
+      const leakCount = db.issues.filter((i) => i.category === "water_leak").length;
+      return res.json({ response: `There are ${leakCount} active water leak reports. Municipal utility crews are dispatched to verified cases.` });
+    } else if (msg.includes("light") || msg.includes("streetlight")) {
+      const lightCount = db.issues.filter((i) => i.category === "broken_light").length;
+      return res.json({ response: `Our system logs ${lightCount} broken streetlight reports. Let us know if you find more by filing a report!` });
+    } else if (msg.includes("alert") || msg.includes("warning")) {
+      return res.json({ response: `There are currently ${activeAlerts.length} predictive hazard alerts active. High-risk areas are shaded red on the heatmap view.` });
+    } else {
+      return res.json({ response: "Hello! I am civiSync Bot. Ask me about active warnings, pothole logs, or streetlight reports in your municipal ward." });
+    }
+  }
+});
+
+// POST /api/chat/intent
+app.post("/api/chat/intent", async (req: Request, res: Response) => {
+  const { message } = req.body;
+  let has_spatial_intent = false;
+  let category = null;
+  let status = null;
+  let severity = null;
+  let area_name = null;
+  let proximity = null;
+  let days_filter = null;
+
+  if (ai) {
+    try {
+      const prompt = `Extract spatial filter intent from this civic app query. Return JSON only, no prose: {"has_spatial_intent": boolean, "category": string or null (one of Pothole/Leak/Streetlight/Waste/Other/null), "status": string or null (Pending/Verified/Assigned/Resolved/null), "severity": string or null (Low/Medium/High/Critical/null), "area_name": string or null, "proximity": string or null, "days_filter": integer or null}. Query: '${message}'`;
+      const response = await ai.models.generateContent({
+        model: "gemini-1.5-flash",
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json"
+        }
+      });
+      const resJson = JSON.parse(response.text.trim());
+      has_spatial_intent = Boolean(resJson.has_spatial_intent);
+      category = resJson.category;
+      status = resJson.status;
+      severity = resJson.severity;
+      area_name = resJson.area_name;
+      proximity = resJson.proximity;
+      days_filter = resJson.days_filter;
+    } catch (err) {
+      console.error("Gemini intent extraction error:", err);
+    }
+  }
+
+  if (!has_spatial_intent) {
+    const msg = message.toLowerCase();
+    if (msg.includes("near") || msg.includes("potholes in") || msg.includes("critical") || msg.includes("unresolved") || msg.includes("leaks in")) {
+      has_spatial_intent = true;
+      if (msg.includes("pothole")) {
+        category = "Pothole";
+      } else if (msg.includes("leak") || msg.includes("water")) {
+        category = "Leak";
+      }
+      if (msg.includes("critical")) {
+        severity = "Critical";
+      }
+      if (msg.includes("unresolved") || msg.includes("pending")) {
+        status = "Pending";
+      }
+      if (msg.includes("t nagar")) {
+        area_name = "T Nagar";
+      } else if (msg.includes("anna nagar")) {
+        area_name = "Anna Nagar";
+      } else if (msg.includes("schools")) {
+        proximity = "near schools";
+      } else if (msg.includes("hospitals")) {
+        proximity = "near hospitals";
+      }
+    }
+  }
+
+  res.json({
+    has_spatial_intent,
+    category,
+    status,
+    severity,
+    area_name,
+    proximity,
+    days_filter
+  });
+});
+
+
 // =====================================================================
 // FRONTEND BUNDLE AND VITE CONFIGURATION
 // =====================================================================
