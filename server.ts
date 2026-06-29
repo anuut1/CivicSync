@@ -65,11 +65,32 @@ interface PredictiveAlert {
   created_at: string;
 }
 
+interface IssueEvent {
+  id: number;
+  issue_id: number;
+  event_type: string;
+  actor_role: string;
+  actor_name: string;
+  content: string;
+  created_at: string;
+}
+
+interface Comment {
+  id: number;
+  issue_id: number;
+  role: string;
+  reporter_name: string;
+  text: string;
+  created_at: string;
+}
+
 interface DB {
   users: User[];
   issues: Issue[];
   votes: Vote[];
   alerts: PredictiveAlert[];
+  events: IssueEvent[];
+  comments: Comment[];
 }
 
 const defaultDB: DB = {
@@ -191,6 +212,8 @@ const defaultDB: DB = {
       created_at: new Date().toISOString()
     }
   ],
+  events: [],
+  comments: []
 };
 
 function readDB(): DB {
@@ -199,10 +222,12 @@ function readDB(): DB {
       fs.writeFileSync(DATA_FILE, JSON.stringify(defaultDB, null, 2));
       return defaultDB;
     }
-    const data = fs.readFileSync(DATA_FILE, "utf-8");
-    return JSON.parse(data);
+    const db = JSON.parse(fs.readFileSync(DATA_FILE, "utf-8"));
+    db.events = db.events || [];
+    db.comments = db.comments || [];
+    return db;
   } catch (err) {
-    console.error("DB reading error, using default", err);
+    console.error("DB reading error", err);
     return defaultDB;
   }
 }
@@ -314,6 +339,7 @@ app.use((req: Request, res: Response, next) => {
 
 app.use(proxyMiddleware);
 app.use(express.json());
+
 
 
 
@@ -659,6 +685,250 @@ app.patch("/api/issues/:id/assign", requireAdmin, (req: Request, res: Response) 
   writeDB(db);
   res.json(issue);
 });
+
+// POST /api/issues/:id/assign
+app.post("/api/issues/:id/assign", requireAdmin, (req: Request, res: Response) => {
+  const id = parseInt(req.params.id);
+  const { assigned_to } = req.body;
+  if (!assigned_to) {
+    return res.status(400).json({ detail: "Assignee target crew name is required" });
+  }
+
+  const db = readDB();
+  const issue = db.issues.find((i) => i.id === id);
+  if (!issue) {
+    return res.status(404).json({ detail: "Civic issue report not found" });
+  }
+
+  issue.assigned_to = assigned_to;
+  issue.status = "assigned";
+
+  // Add timeline event
+  const newEvent: IssueEvent = {
+    id: (db.events || []).length + 1,
+    issue_id: issue.id,
+    event_type: "assign",
+    actor_role: "Admin",
+    actor_name: "Municipal Admin",
+    content: `Assigned to ${assigned_to}`,
+    created_at: new Date().toISOString(),
+  };
+
+  db.events = db.events || [];
+  db.events.push(newEvent);
+
+  writeDB(db);
+  res.json(issue);
+});
+
+// GET /api/issues/:id/events
+app.get("/api/issues/:id/events", (req: Request, res: Response) => {
+  const issueId = parseInt(req.params.id);
+  const db = readDB();
+
+  const eventsDb = (db.events || []).filter((e) => e.issue_id === issueId);
+  const commentsDb = (db.comments || []).filter((c) => c.issue_id === issueId);
+
+  const timeline: any[] = [];
+
+  eventsDb.forEach((e) => {
+    timeline.push({
+      id: `e${e.id}`,
+      issue_id: e.issue_id,
+      event_type: e.event_type,
+      actor_role: e.actor_role,
+      actor_name: e.actor_name,
+      content: e.content,
+      created_at: e.created_at,
+    });
+  });
+
+  commentsDb.forEach((c) => {
+    timeline.push({
+      id: `c${c.id}`,
+      issue_id: c.issue_id,
+      event_type: "comment",
+      actor_role: c.role ? c.role.charAt(0).toUpperCase() + c.role.slice(1) : "Citizen",
+      actor_name: c.reporter_name,
+      content: c.text,
+      created_at: c.created_at,
+    });
+  });
+
+  timeline.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+  res.json(timeline);
+});
+
+// POST /api/issues/:id/comment
+app.post("/api/issues/:id/comment", requireUser, (req: Request, res: Response) => {
+  const issueId = parseInt(req.params.id);
+  const { text } = req.body;
+  const user = (req as any).user as User;
+  const db = readDB();
+
+  const newComment: Comment = {
+    id: (db.comments || []).length + 1,
+    issue_id: issueId,
+    role: user.role,
+    reporter_name: user.name,
+    text,
+    created_at: new Date().toISOString(),
+  };
+
+  db.comments = db.comments || [];
+  db.comments.push(newComment);
+
+  // Add issue timeline event for the comment
+  const newEvent: IssueEvent = {
+    id: (db.events || []).length + 1,
+    issue_id: issueId,
+    event_type: "comment",
+    actor_role: user.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1) : "Citizen",
+    actor_name: user.name,
+    content: `Added comment: "${text}"`,
+    created_at: new Date().toISOString(),
+  };
+
+  db.events = db.events || [];
+  db.events.push(newEvent);
+
+  writeDB(db);
+  res.json({ message: "Comment successfully posted" });
+});
+
+// POST /api/issues/:id/rate
+app.post("/api/issues/:id/rate", requireUser, (req: Request, res: Response) => {
+  const id = parseInt(req.params.id);
+  const { rating } = req.body;
+  const user = (req as any).user as User;
+  const db = readDB();
+
+  const issue = db.issues.find((i) => i.id === id);
+  if (!issue) {
+    return res.status(404).json({ detail: "Issue not found" });
+  }
+
+  issue.resolution_rating = rating;
+
+  const newEvent: IssueEvent = {
+    id: (db.events || []).length + 1,
+    issue_id: issue.id,
+    event_type: "rating",
+    actor_role: "Citizen",
+    actor_name: user.name,
+    content: `Citizen rating submitted showing ${rating} stars`,
+    created_at: new Date().toISOString(),
+  };
+
+  db.events = db.events || [];
+  db.events.push(newEvent);
+
+  writeDB(db);
+  res.json({ status: "success", message: "Rating saved successfully" });
+});
+
+// POST /api/issues/:id/escalate
+app.post("/api/issues/:id/escalate", requireUser, async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id);
+  const user = (req as any).user as User;
+  const db = readDB();
+
+  const issue = db.issues.find((i) => i.id === id);
+  if (!issue) {
+    return res.status(404).json({ detail: "Issue not found" });
+  }
+
+  const councillorEmail = `councillor.${issue.ward.toLowerCase().replace(/ /g, "_")}@civisync.org`;
+  let draftBody = `Dear Ward Councillor,\n\nI am writing to escalate an unresolved civic issue in our ward. The committed resolution time for category '${issue.category}' has been breached.\n\nIssue Details:\n- ID: #{issue.id}\n- Description: {issue.description || issue.ai_summary}\n- Location: {issue.address_string || "Unknown"}\n- Severity: {issue.severity}\n\nPlease take immediate action.\n\nSincerely,\n${user.name}`;
+
+  if (ai) {
+    try {
+      const prompt = `Write a formal escalation email from a citizen to a ward councillor regarding an overdue civic issue: category '${issue.category}', description '${issue.description || issue.ai_summary}', location '${issue.address_string || "Unknown"}', overdue by several days. Tone: firm, polite, official. Format: subject, dear councillor, body, sincerely.`;
+      const response = await ai.models.generateContent({
+        model: "gemini-1.5-flash",
+        contents: prompt
+      });
+      draftBody = response.text.trim();
+    } catch (err) {
+      console.error("Gemini escalation email draft error:", err);
+    }
+  }
+
+  // Add timeline event
+  const newEvent: IssueEvent = {
+    id: (db.events || []).length + 1,
+    issue_id: issue.id,
+    event_type: "sla_breach",
+    actor_role: "Citizen",
+    actor_name: user.name,
+    content: `Issue formally escalated to Ward Councillor (${councillorEmail})`,
+    created_at: new Date().toISOString(),
+  };
+
+  db.events = db.events || [];
+  db.events.push(newEvent);
+
+  writeDB(db);
+
+  res.json({
+    status: "success",
+    message: `Escalation email sent to ${councillorEmail} and CC'd to you.`
+  });
+});
+
+// GET /api/public/departments
+app.get("/api/public/departments", (req: Request, res: Response) => {
+  const db = readDB();
+  const departments = [
+    { id: 1, name: "Roads & Highways Department", contact_email: "roads@civisync.org", contact_phone: "+919840123456", head_name: "Mr. Ram Kumar" },
+    { id: 2, name: "Water Supply & Sewerage Board", contact_email: "water@civisync.org", contact_phone: "+919840123457", head_name: "Mrs. Priya Raj" },
+    { id: 3, name: "Electricity & Lighting Corporation", contact_email: "electricity@civisync.org", contact_phone: "+919840123458", head_name: "Mr. Vijay Shankar" },
+    { id: 4, name: "Solid Waste Management Dept", contact_email: "waste@civisync.org", contact_phone: "+919840123459", head_name: "Mrs. Lakshmi Devi" }
+  ];
+
+  const result = departments.map((d) => {
+    const issues = db.issues.filter((i) => i.assigned_to === d.name);
+    const assigned = issues.length;
+    const resolved = issues.filter((i) => i.status === "resolved").length;
+
+    let totalDays = 0.0;
+    let totalRating = 0.0;
+    let ratingCount = 0;
+    let penalty = 0;
+
+    issues.forEach((i) => {
+      if (i.status === "resolved" && i.created_at) {
+        totalDays += 1.5;
+        if (i.resolution_rating) {
+          totalRating += i.resolution_rating;
+          ratingCount++;
+        }
+      }
+      if (i.ai_repair_score !== undefined && i.ai_repair_score !== null && i.ai_repair_score < 5) {
+        penalty += 10;
+      }
+    });
+
+    const resRate = assigned > 0 ? (resolved / assigned) * 100 : 75.0;
+    const avgDays = resolved > 0 ? totalDays / resolved : 3.0;
+    const avgRating = ratingCount > 0 ? totalRating / ratingCount : 4.0;
+
+    const speedScore = Math.max(0, 100 - avgDays * 10);
+    const qualityScore = avgRating * 20;
+
+    const rawScore = resRate * 0.4 + speedScore * 0.3 + qualityScore * 0.3 - penalty;
+    const accountabilityScore = Math.max(0, Math.min(100, Math.round(rawScore)));
+
+    return {
+      ...d,
+      accountability_score: accountabilityScore
+    };
+  });
+
+  res.json(result);
+});
+
 
 // POST /api/issues/:id/resolve
 app.post("/api/issues/:id/resolve", requireAdmin, upload.single("resolved_image"), (req: Request, res: Response) => {

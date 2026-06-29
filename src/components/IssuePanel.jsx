@@ -156,9 +156,11 @@ function IssuePanel() {
   };
 
   // Lookup matched department details
-  const matchedDept = departments.find(
-    d => d.id === selectedIssue.assigned_department_id || d.name === selectedIssue.assigned_to
-  );
+  const matchedDept = Array.isArray(departments)
+    ? departments.find(
+        d => d.id === selectedIssue.assigned_department_id || d.name === selectedIssue.assigned_to
+      )
+    : null;
 
   // Compute SLA Countdown
   const getSLADetails = () => {
@@ -889,7 +891,7 @@ function IssuePanel() {
               <p style={{ fontSize: '12px', color: '#64748b', textAlign: 'center' }}>Loading timeline events...</p>
             ) : (
               <div style={{ position: 'relative', paddingLeft: '14px', borderLeft: '2px solid #e2e8f0', marginLeft: '8px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {events.map((evt) => {
+                {Array.isArray(events) && events.map((evt) => {
                   const style = getTimelineColorStyle(evt.actor_role);
                   return (
                     <div key={evt.id} style={{ position: 'relative', fontSize: '13px' }}>
