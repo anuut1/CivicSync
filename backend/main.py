@@ -589,6 +589,7 @@ class TokenResponse(BaseModel):
 
 class AssignPayload(BaseModel):
     assigned_to: str
+    eta_days: Optional[int] = None
 
 class ChatRequest(BaseModel):
     message: str
