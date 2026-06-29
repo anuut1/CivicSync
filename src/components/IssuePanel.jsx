@@ -349,7 +349,7 @@ function IssuePanel() {
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
           navigator.share({
             files: [file],
-            title: `civiSync Chennai Report #${selectedIssue.id}`,
+            title: `civiSync Report #${selectedIssue.id}`,
             text: `Help resolve this ${selectedIssue.category?.replace('_', ' ') || 'other'} hazard!`
           }).catch(err => {
             console.log("Web share skipped, using manual download", err);
@@ -1337,7 +1337,7 @@ function IssuePanel() {
                 {/* Branding footer */}
                 <div style={{ marginTop: 'auto', textAlign: 'center', borderTop: '1px solid #cbd5e1', width: '100%', paddingTop: '8px' }}>
                   <span style={{ fontSize: '9px', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase' }}>
-                    Powered by civiSync Chennai App
+                    Powered by civiSync App
                   </span>
                 </div>
               </div>

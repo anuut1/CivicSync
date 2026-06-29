@@ -929,6 +929,40 @@ app.get("/api/public/departments", (req: Request, res: Response) => {
   res.json(result);
 });
 
+// GET /api/users/leaderboard
+app.get("/api/users/leaderboard", (req: Request, res: Response) => {
+  const db = readDB();
+  const leaderboard = db.users.map((u) => {
+    let title = "Newcomer";
+    if (u.xp >= 150) {
+      title = "Ward Champion";
+    } else if (u.xp >= 100) {
+      title = "Community Hero";
+    } else if (u.xp >= 50) {
+      title = "Verified Citizen";
+    } else if (u.xp >= 20) {
+      title = "Reporter";
+    }
+
+    const weekly_xp = Math.min(u.xp, 15);
+    const monthly_xp = u.xp;
+
+    return {
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      role: u.role,
+      xp: u.xp,
+      weekly_xp,
+      monthly_xp,
+      level: title,
+      badges: [],
+      rank_movement: 0
+    };
+  });
+  res.json(leaderboard);
+});
+
 
 // POST /api/issues/:id/resolve
 app.post("/api/issues/:id/resolve", requireAdmin, upload.single("resolved_image"), (req: Request, res: Response) => {

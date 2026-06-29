@@ -72,7 +72,7 @@ function ChatBot() {
         }
 
         if (intent.area_name) {
-          const query = `${intent.area_name}, Chennai, Tamil Nadu, India`;
+          const query = intent.area_name;
           try {
             const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`;
             const geocodeRes = await fetch(url, {

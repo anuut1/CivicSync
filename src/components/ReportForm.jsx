@@ -216,7 +216,7 @@ function ReportForm() {
           if (data && data.display_name) {
             setAddressString(data.display_name.split(',').slice(0, 3).join(','));
           } else {
-            setAddressString(`Chennai, Tamil Nadu`);
+            setAddressString("Detected Location");
           }
         } catch {
           setAddressString("Acquired GPS Coordinates");
@@ -225,9 +225,9 @@ function ReportForm() {
       },
       (err) => {
         console.warn(err);
-        setAddressString("Chennai Central Station (fallback)");
-        setLatitude(13.0827);
-        setLongitude(80.2707);
+        setAddressString("Default Location (fallback)");
+        setLatitude(37.4220);
+        setLongitude(-122.0840);
         setError('Location access denied. Please click map or type address.');
         setLocating(false);
       },
@@ -748,7 +748,7 @@ function ReportForm() {
                 <form onSubmit={handleAddressSearch} style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
                   <input
                     type="text"
-                    placeholder="Enter area name (e.g. Adyar, Chennai)..."
+                    placeholder="Enter area name (e.g. Downtown)..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     style={{ ...textInputStyle, marginBottom: 0 }}

@@ -265,6 +265,37 @@ function MapCenterUpdater() {
   return null;
 }
 
+function MapAutoFit() {
+  const map = useMap();
+  const setIssues = useStore((state) => state.setIssues);
+  const selectedStatuses = useStore((state) => state.selectedStatuses);
+  const [initialFit, setInitialFit] = useState(false);
+
+  useEffect(() => {
+    if (!map || initialFit) return;
+
+    const loadAndFit = async () => {
+      try {
+        const response = await getMapIssues({ include_resolved: selectedStatuses.includes('resolved') });
+        const allIssues = response.data;
+        setIssues(allIssues);
+
+        if (allIssues.length > 0) {
+          const latLngs = allIssues.map(i => [parseFloat(i.latitude), parseFloat(i.longitude)]);
+          map.fitBounds(latLngs, { padding: [50, 50] });
+        }
+        setInitialFit(true);
+      } catch (err) {
+        console.error('Initial load and fit error:', err);
+      }
+    };
+
+    loadAndFit();
+  }, [map, initialFit, selectedStatuses, setIssues]);
+
+  return null;
+}
+
 // Cluster Markers & Circle Markers Renderer
 function ClusterMarkers({ clusters, selectIssue }) {
   const map = useMap();
@@ -380,7 +411,7 @@ function IssueMap() {
         }
       } else {
         setToast({
-          message: 'Try being more specific — e.g. "Anna Nagar Chennai"',
+          message: 'Try being more specific — e.g. "Downtown"',
           type: 'warning'
         });
       }
@@ -459,7 +490,7 @@ function IssueMap() {
       <TopBar onSearch={searchAddress} onGPS={handleGPS} />
 
       <MapContainer
-        center={[13.0827, 80.2707]}
+        center={[37.4220, -122.0840]}
         zoom={12}
         zoomControl={false}
         ref={mapRef}
@@ -473,6 +504,7 @@ function IssueMap() {
         <MapController mapRef={mapRef} />
         <MapRecenter />
         <MapCenterUpdater />
+        <MapAutoFit />
 
         {/* Draw Ward Polygons Heat Overlays */}
         {mapMode === 'heatmap' && Object.entries(getDynamicWardPolygons(issues)).map(([wardName, data]) => {
